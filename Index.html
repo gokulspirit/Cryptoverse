@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Cryptoverse Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --primary: #58a6ff;
+      --bg-dark: #0d1117;
+      --bg-light: #ffffff;
+      --text-light: #c9d1d9;
+      --text-dark: #111;
+      --card-dark: #1f2937;
+      --card-light: #f1f1f1;
+    }
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-light);
+      transition: all 0.3s ease;
+    }
+    body.light-mode {
+      background-color: var(--bg-light);
+      color: var(--text-dark);
+    }
+    header {
+      padding: 1rem;
+      text-align: center;
+      background: var(--card-dark);
+    }
+    body.light-mode header {
+      background: var(--card-light);
+    }
+    h1 {
+      margin: 0;
+      color: var(--primary);
+    }
+    .controls {
+      margin-top: 1rem;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 1rem;
+    }
+    input, select, button {
+      padding: 0.5rem;
+      border-radius: 6px;
+      border: none;
+      font-size: 1rem;
+    }
+    button {
+      background: var(--primary);
+      color: white;
+      cursor: pointer;
+    }
+    #crypto-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1rem;
+      padding: 2rem;
+    }
+    .crypto-card {
+      padding: 1rem;
+      border-radius: 10px;
+      background: var(--card-dark);
+      text-align: center;
+      transition: transform 0.2s ease;
+    }
+    body.light-mode .crypto-card {
+      background: var(--card-light);
+    }
+    .crypto-card:hover {
+      transform: translateY(-5px);
+    }
+    .top-gainer {
+      border: 2px solid limegreen;
+    }
+    .top-loser {
+      border: 2px solid red;
+    }
+    footer {
+      text-align: center;
+      padding: 1rem;
+      background: var(--card-dark);
+      color: gray;
+    }
+    body.light-mode footer {
+      background: var(--card-light);
+      color: #555;
+    }
+    .modal {
+      position: fixed;
+      z-index: 999;
+      left: 0; top: 0;
+      width: 100%; height: 100%;
+      background-color: rgba(0,0,0,0.85);
+      display: none;
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-content {
+      background: var(--card-dark);
+      color: var(--text-light);
+      padding: 2rem;
+      border-radius: 10px;
+      max-width: 90%;
+      width: 700px;
+      position: relative;
+    }
+    body.light-mode .modal-content {
+      background: var(--card-light);
+      color: var(--text-dark);
+    }
+    .close-btn {
+      position: absolute;
+      right: 20px;
+      top: 10px;
+      font-size: 24px;
+      cursor: pointer;
+    }
+    @media (max-width: 600px) {
+      .controls {
+        flex-direction: column;
+        align-items: center;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Cryptoverse Dashboard</h1>
+    <div class="controls">
+      <input type="text" id="searchInput" placeholder="Search...">
+      <select id="currencySelect">
+        <option value="usd" selected>USD</option>
+        <option value="inr">INR</option>
+      </select>
+      <button id="themeToggle">Toggle Mode</button>
+    </div>
+  </header>
+
+  <section id="crypto-list"></section>
+
+  <footer>
+    <p>&copy; 2025 Cryptoverse. All rights reserved.</p>
+  </footer>
+
+  <div class="modal" id="coinModal">
+    <div class="modal-content">
+      <span class="close-btn" id="closeModal">&times;</span>
+      <div id="modalDetails"></div>
+      <canvas id="priceChart" height="200"></canvas>
+    </div>
+  </div>
+
+  <script>
+    const cryptoList = document.getElementById('crypto-list');
+    const searchInput = document.getElementById('searchInput');
+    const currencySelect = document.getElementById('currencySelect');
+    const themeToggle = document.getElementById('themeToggle');
+    const modal = document.getElementById("coinModal");
+    const modalDetails = document.getElementById("modalDetails");
+    const closeModal = document.getElementById("closeModal");
+    let currentCurrency = 'usd';
+    let chart;
+
+    async function fetchCoins() {
+      const res = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=${currentCurrency}&order=market_cap_desc&per_page=100`);
+      return await res.json();
+    }
+
+    function displayCoins(coins) {
+      cryptoList.innerHTML = '';
+      const topGainers = [...coins].sort((a,b) => b.price_change_percentage_24h - a.price_change_percentage_24h).slice(0, 3);
+      const topLosers = [...coins].sort((a,b) => a.price_change_percentage_24h - b.price_change_percentage_24h).slice(0, 3);
+
+      coins.forEach(coin => {
+        const card = document.createElement('div');
+        card.className = 'crypto-card';
+        if (topGainers.some(g => g.id === coin.id)) card.classList.add('top-gainer');
+        if (topLosers.some(l => l.id === coin.id)) card.classList.add('top-loser');
+
+        card.innerHTML = `
+          <h3>${coin.name} (${coin.symbol.toUpperCase()})</h3>
+          <img src="${coin.image}" width="40">
+          <p>Price: ${formatCurrency(coin.current_price)}</p>
+          <p>24h: <span style="color:${coin.price_change_percentage_24h > 0 ? 'lime' : 'red'}">${coin.price_change_percentage_24h.toFixed(2)}%</span></p>
+          <button onclick="showDetails('${coin.id}')">View</button>
+        `;
+        cryptoList.appendChild(card);
+      });
+    }
+
+    function formatCurrency(value) {
+      const symbol = currentCurrency === 'usd' ? '$' : '₹';
+      return symbol + value.toLocaleString();
+    }
+
+    async function showDetails(id) {
+      const [coinData, chartData] = await Promise.all([
+        fetch(`https://api.coingecko.com/api/v3/coins/${id}`).then(res => res.json()),
+        fetch(`https://api.coingecko.com/api/v3/coins/${id}/market_chart?vs_currency=${currentCurrency}&days=7`).then(res => res.json())
+      ]);
+
+      modalDetails.innerHTML = `
+        <h2>${coinData.name}</h2>
+        <img src="${coinData.image.large}" width="60">
+        <p><strong>Current:</strong> ${formatCurrency(coinData.market_data.current_price[currentCurrency])}</p>
+        <p><strong>Market Cap:</strong> ${formatCurrency(coinData.market_data.market_cap[currentCurrency])}</p>
+        <p><strong>24h High:</strong> ${formatCurrency(coinData.market_data.high_24h[currentCurrency])}</p>
+        <p><strong>24h Low:</strong> ${formatCurrency(coinData.market_data.low_24h[currentCurrency])}</p>
+      `;
+
+      const ctx = document.getElementById("priceChart").getContext("2d");
+      if (chart) chart.destroy();
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: chartData.prices.map(p => new Date(p[0]).toLocaleDateString()),
+          datasets: [{
+            label: `${coinData.name} Price`,
+            data: chartData.prices.map(p => p[1]),
+            borderColor: '#58a6ff',
+            backgroundColor: 'rgba(88,166,255,0.2)',
+            fill: true,
+            tension: 0.4
+          }]
+        }
+      });
+
+      modal.style.display = 'flex';
+    }
+
+    function init() {
+      fetchCoins().then(displayCoins);
+      setInterval(() => fetchCoins().then(displayCoins), 60000);
+    }
+
+    currencySelect.addEventListener('change', () => {
+      currentCurrency = currencySelect.value;
+      init();
+    });
+
+    searchInput.addEventListener('input', async () => {
+      const allCoins = await fetchCoins();
+      const filtered = allCoins.filter(coin => coin.name.toLowerCase().includes(searchInput.value.toLowerCase()));
+      displayCoins(filtered);
+    });
+
+    themeToggle.addEventListener('click', () => {
+      document.body.classList.toggle('light-mode');
+    });
+
+    closeModal.addEventListener('click', () => {
+      modal.style.display = 'none';
+    });
+
+    window.onclick = e => {
+      if (e.target === modal) modal.style.display = 'none';
+    };
+
+    init();
+  </script>
+</body>
+</html>
